@@ -1,0 +1,93 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id       String  @id @default(uuid())
+  email    String  @unique
+  password String
+  name     String
+  role     UserRole @default(USER)
+  createdAt DateTime @default(now())
+
+  absences Absence[] @relation("CreatedBy")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  RESIDENT
+}
+
+model Resident {
+  id        String  @id @default(uuid())
+  name      String
+  pgyLevel  Int
+  createdAt DateTime @default(now())
+
+  absences Absence[]
+  makeups  Makeup[]
+}
+
+model Shift {
+  id           String     @id @default(uuid())
+  residentId   String
+  date         DateTime
+  type         ShiftType
+  status       ShiftStatus @default(ESCALADO)
+
+  @@unique([residentId, date, type])
+}
+
+model Absence {
+  id          String     @id @default(uuid())
+  resident    Resident   @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  residentId  String
+  date        DateTime
+  hours       Int        // hours of absence
+  type        AbsenceType // ATESTADO, SEM_JUSTIFICATIVA, OUTRA
+  reason      String?    // additional reason if type = OUTRA
+  createdBy   User       @relation("CreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime   @default(now())
+
+  @@index([residentId])
+}
+
+model Makeup {
+  id          String   @id @default(uuid())
+  resident    Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  residentId  String
+  date        DateTime
+  hours       Int      // hours made up
+  createdAt   DateTime @default(now())
+
+  @@index([residentId])
+}
+
+enum ShiftType {
+  DIURNO
+  NOTURNO
+}
+
+enum ShiftStatus {
+  ESCALADO
+  PRESENTE
+  FALTA
+  FALTA_JUSTIFICADA
+}
+
+enum AbsenceType {
+  ATESTADO
+  SEM_JUSTIFICATIVA
+  OUTRA
+}
