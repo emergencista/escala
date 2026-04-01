@@ -51,8 +51,14 @@ export async function GET() {
     }
 
     // Calculate totals
-    const totalAbsenceHours = resident.absences.reduce((sum, a) => sum + a.hours, 0);
-    const totalMakeupHours = resident.makeups.reduce((sum, m) => sum + m.hours, 0);
+    const totalAbsenceHours = resident.absences.reduce(
+      (sum: number, a: { hours: number }) => sum + a.hours,
+      0
+    );
+    const totalMakeupHours = resident.makeups.reduce(
+      (sum: number, m: { hours: number }) => sum + m.hours,
+      0
+    );
     const balanceHours = totalAbsenceHours - totalMakeupHours;
 
     return NextResponse.json({

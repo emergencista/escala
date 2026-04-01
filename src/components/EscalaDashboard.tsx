@@ -215,7 +215,7 @@ export default function EscalaDashboard() {
     <div className="min-h-screen bg-gray-50 text-slate-900">
       {/* ========== HEADER ========== */}
       <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+        <div className="w-full px-3 py-4 sm:px-4 sm:py-6 lg:px-6 xl:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-slate-900">{turnoAtual.tipo}</h1>
@@ -254,7 +254,7 @@ export default function EscalaDashboard() {
       )}
 
       {/* ========== MAIN CONTENT ========== */}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <main className="w-full px-3 py-6 sm:px-4 lg:px-6 xl:px-8">
         {/* ========== SECTION 1: PAINEL DE LANÇAMENTO RÁPIDO ========== */}
         <section className="mb-8">
           <div className="mb-4">
@@ -329,7 +329,7 @@ export default function EscalaDashboard() {
         </section>
 
         {/* ========== SECTION 2: FORMULÁRIO + GRÁFICO ========== */}
-        <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
+        <div className="grid gap-6 2xl:grid-cols-[minmax(0,2.4fr)_minmax(340px,1fr)]">
           {/* Gráfico de Horas do Mês */}
           <section className="rounded-xl bg-white p-6 shadow-sm">
             <div className="mb-4">
