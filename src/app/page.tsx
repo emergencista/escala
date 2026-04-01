@@ -1,5 +1,5 @@
-import EscalaDashboard from "@/components/EscalaDashboard";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <EscalaDashboard />;
+  redirect("/escala/absences");
 }
