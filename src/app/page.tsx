@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import AbsencesPage from "./escala/absences/page";
 
 export default function Home() {
-  redirect("/escala/absences");
+  return <AbsencesPage />;
 }
