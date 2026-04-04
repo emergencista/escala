@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { LogOut, AlertCircle, Loader } from "lucide-react";
 import { formatDateFromIso } from "@/lib/date";
 import { apiFetch } from "@/lib/fetch-helper";
@@ -28,17 +27,17 @@ interface ResidentData {
 }
 
 export default function ResidentShiftsPage() {
-  const router = useRouter();
   const [resident, setResident] = useState<ResidentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [logoutReady, setLogoutReady] = useState(false);
 
   useEffect(() => {
     const fetchResidentData = async () => {
       try {
         const response = await apiFetch("/api/resident/shifts");
         if (response.status === 401) {
-          router.push("/");
+          setError("Sua sessão expirou. Faça login novamente para continuar.");
           return;
         }
         if (!response.ok) {
@@ -54,14 +53,17 @@ export default function ResidentShiftsPage() {
     };
 
     fetchResidentData();
-  }, [router]);
+  }, []);
 
   const handleLogout = async () => {
+    setLogoutReady(false);
+
     try {
       await apiFetch("/api/logout", { method: "POST" });
-      router.push("/");
+      setLogoutReady(true);
     } catch (err) {
       console.error("Erro ao fazer logout:", err);
+      setError("Não foi possível encerrar a sessão. Tente novamente.");
     }
   };
 
@@ -87,12 +89,9 @@ export default function ResidentShiftsPage() {
               <p className="mt-1 text-sm text-red-700">
                 {error || "Não foi possível carregar seus dados"}
               </p>
-              <button
-                onClick={() => router.push("/")}
-                className="mt-4 text-sm font-medium text-red-700 hover:text-red-900 underline"
-              >
+              <a href="/" className="mt-4 inline-block text-sm font-medium text-red-700 hover:text-red-900 underline">
                 Voltar para login
-              </button>
+              </a>
             </div>
           </div>
         </div>
@@ -130,6 +129,12 @@ export default function ResidentShiftsPage() {
           </div>
         </div>
       </header>
+
+      {logoutReady ? (
+        <div className="mx-auto mt-4 w-full max-w-6xl rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+          Logout realizado. <a href="/" className="underline">Ir para login</a>
+        </div>
+      ) : null}
 
       {/* Main Content */}
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">

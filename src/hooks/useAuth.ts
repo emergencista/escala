@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/fetch-helper";
 
 export interface User {
@@ -12,7 +11,6 @@ export interface User {
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -38,7 +36,6 @@ export function useAuth() {
     try {
       await apiFetch("/api/logout", { method: "POST" });
       setUser(null);
-      router.push("/");
     } catch (error) {
       console.error("Logout error:", error);
     }
