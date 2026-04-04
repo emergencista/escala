@@ -29,14 +29,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Fetch all absences and makeups
-    const [absences, makeups] = await Promise.all([
+    // Fetch all absences, confirmed makeups and planned makeups
+    const [absences, makeups, plannedMakeups] = await Promise.all([
       prisma.absence.findMany({
         where: { residentId },
         orderBy: { date: "desc" },
       }),
       prisma.makeup.findMany({
-        where: { residentId },
+        where: { residentId, status: "CONFIRMED" },
+        orderBy: { date: "desc" },
+      }),
+      prisma.makeup.findMany({
+        where: { residentId, status: "PLANNED" },
         orderBy: { date: "desc" },
       }),
     ]);
@@ -50,14 +54,20 @@ export async function GET(req: NextRequest) {
       (sum: number, m: { hours: number }) => sum + m.hours,
       0
     );
+    const totalPlannedMakeupHours = plannedMakeups.reduce(
+      (sum: number, m: { hours: number }) => sum + m.hours,
+      0
+    );
     const balanceHours = totalAbsenceHours - totalMakeupHours;
 
     return NextResponse.json({
       resident,
       absences,
       makeups,
+      plannedMakeups,
       totalAbsenceHours,
       totalMakeupHours,
+      totalPlannedMakeupHours,
       balanceHours,
     });
   } catch (error) {

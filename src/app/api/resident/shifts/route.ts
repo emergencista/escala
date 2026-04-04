@@ -11,6 +11,15 @@ function emailToResidentName(email: string): string {
     .join(" ");
 }
 
+function normalizeName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 export async function GET() {
   try {
     const session = await getSession();
@@ -22,26 +31,57 @@ export async function GET() {
       );
     }
 
-    // Convert email to resident name (e.g., maria.carolina@escala.local -> Maria Carolina)
-    const residentName = emailToResidentName(session.email);
-
-    // Find resident by matching name
-    const resident = await prisma.resident.findFirst({
-      where: {
-        name: {
-          equals: residentName,
-          mode: "insensitive",
-        },
-      },
-      include: {
-        absences: {
-          orderBy: { date: "desc" },
-        },
-        makeups: {
-          orderBy: { date: "desc" },
-        },
-      },
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { name: true, email: true },
     });
+
+    const candidateNames = [
+      user?.name || "",
+      emailToResidentName(user?.email || session.email),
+      emailToResidentName(session.email),
+    ].filter(Boolean);
+
+    let resident = null;
+
+    for (const candidate of candidateNames) {
+      resident = await prisma.resident.findFirst({
+        where: {
+          name: {
+            equals: candidate,
+            mode: "insensitive",
+          },
+        },
+        include: {
+          absences: {
+            orderBy: { date: "desc" },
+          },
+          makeups: {
+            orderBy: { date: "desc" },
+          },
+        },
+      });
+
+      if (resident) {
+        break;
+      }
+    }
+
+    if (!resident) {
+      const residents = await prisma.resident.findMany({
+        include: {
+          absences: {
+            orderBy: { date: "desc" },
+          },
+          makeups: {
+            orderBy: { date: "desc" },
+          },
+        },
+      });
+
+      const normalizedCandidates = new Set(candidateNames.map(normalizeName));
+      resident = residents.find((item) => normalizedCandidates.has(normalizeName(item.name))) || null;
+    }
 
     if (!resident) {
       return NextResponse.json(

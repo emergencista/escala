@@ -147,8 +147,8 @@ export default function EscalaDashboard() {
     setLoading(true);
     try {
       const [resReq, shiftsReq] = await Promise.all([
-        fetch("/api/residents", { cache: "no-store" }),
-        fetch("/api/shifts", { cache: "no-store" }),
+        fetch("/escala/api/residents", { cache: "no-store" }),
+        fetch("/escala/api/shifts", { cache: "no-store" }),
       ]);
 
       const residentsData = await resReq.json();
@@ -168,7 +168,7 @@ export default function EscalaDashboard() {
   const handleStatus = async (residentId: string, status: string) => {
     setLoading(true);
     try {
-      await fetch("/api/shifts", {
+      await fetch("/escala/api/shifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ residentId, status }),
@@ -187,7 +187,7 @@ export default function EscalaDashboard() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/residents", {
+      const res = await fetch("/escala/api/residents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

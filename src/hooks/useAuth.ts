@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/fetch-helper";
 
 export interface User {
   id: string;
@@ -16,7 +17,7 @@ export function useAuth() {
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const res = await fetch("/escala/api/me");
+        const res = await apiFetch("/api/me");
         if (res.ok) {
           const data = await res.json();
           setUser(data.session);
@@ -35,9 +36,9 @@ export function useAuth() {
 
   const logout = async () => {
     try {
-      await fetch("/escala/api/logout", { method: "POST" });
+      await apiFetch("/api/logout", { method: "POST" });
       setUser(null);
-      router.push("/escala/login");
+      router.push("/");
     } catch (error) {
       console.error("Logout error:", error);
     }

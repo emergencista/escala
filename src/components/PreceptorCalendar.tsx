@@ -8,6 +8,47 @@ interface PreceptorCalendarProps {
   events: CalendarEvent[];
 }
 
+interface SelectedDayPayload {
+  dateLabel: string;
+  items: CalendarEvent[];
+}
+
+function parseDateParts(value?: string | null): { year: number; month: number; day: number } | null {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  const raw = value.split("T")[0] || value;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  return { year, month, day };
+}
+
+function buildDayLabel(year: number, month: number, day: number): string {
+  const safeDate = new Date(Date.UTC(year, month, day));
+  if (Number.isNaN(safeDate.getTime())) {
+    return `${String(day).padStart(2, "0")}/${String(month + 1).padStart(2, "0")}/${year}`;
+  }
+
+  return safeDate.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -17,15 +58,12 @@ function getFirstDayOfMonth(year: number, month: number): number {
 }
 
 function isSameDate(dateStr: string, year: number, month: number, day: number): boolean {
-  const parts = dateStr.split("T")[0].split("-");
-  const eventYear = parseInt(parts[0], 10);
-  const eventMonth = parseInt(parts[1], 10) - 1;
-  const eventDay = parseInt(parts[2], 10);
-  return eventYear === year && eventMonth === month && eventDay === day;
-}
+  const parsed = parseDateParts(dateStr);
+  if (!parsed) {
+    return false;
+  }
 
-function formatTooltipLine(event: CalendarEvent) {
-  return `${event.label}: ${event.residentName}${event.details ? ` · ${event.details}` : ""}`;
+  return parsed.year === year && parsed.month - 1 === month && parsed.day === day;
 }
 
 function getDayTone(events: CalendarEvent[]) {
@@ -46,6 +84,7 @@ export default function PreceptorCalendar({ events }: PreceptorCalendarProps) {
   const now = new Date();
   const [currentYear, setCurrentYear] = useState(now.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(now.getMonth());
+  const [selectedDay, setSelectedDay] = useState<SelectedDayPayload | null>(null);
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
   const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
@@ -80,13 +119,23 @@ export default function PreceptorCalendar({ events }: PreceptorCalendarProps) {
 
   // Get events for this month
   const getEventsForDay = (day: number) => {
-    return events.filter((event) => isSameDate(event.date, currentYear, currentMonth, day));
+    return events.filter((event) => event && isSameDate(event.date, currentYear, currentMonth, day));
   };
 
+  function handleDayClick(day: number | null) {
+    if (!day) {
+      return;
+    }
+
+    const items = getEventsForDay(day);
+    const dateLabel = buildDayLabel(currentYear, currentMonth, day);
+    setSelectedDay({ dateLabel, items });
+  }
+
   return (
-    <div className="rounded-[30px] bg-white p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between">
-        <h3 className="text-lg font-bold text-slate-900">Calendário de {monthName}</h3>
+    <div className="relative w-full min-w-0 overflow-visible rounded-[28px] border border-slate-300/80 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.08)]">
+      <div className="mb-4 flex items-center justify-between gap-3 overflow-x-auto">
+        <h3 className="text-base font-black tracking-[0.02em] text-slate-900">Calendário de {monthName}</h3>
         <div className="flex items-center gap-2">
           <button
             onClick={previousMonth}
@@ -94,7 +143,7 @@ export default function PreceptorCalendar({ events }: PreceptorCalendarProps) {
           >
             <ChevronLeft className="h-5 w-5 text-slate-600" />
           </button>
-          <span className="min-w-max text-sm font-medium text-slate-600">{monthName}</span>
+          <span className="min-w-max text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">{monthName}</span>
           <button
             onClick={nextMonth}
             className="rounded-lg border border-slate-200 bg-slate-50 p-2 transition hover:bg-slate-100"
@@ -105,82 +154,156 @@ export default function PreceptorCalendar({ events }: PreceptorCalendarProps) {
       </div>
 
       {/* Legend */}
-      <div className="mb-6 flex flex-wrap gap-4 rounded-lg bg-slate-50 p-3">
+      <div className="mb-4 flex flex-wrap gap-3 rounded-lg bg-slate-50 p-2">
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 rounded-sm bg-red-500" />
-          <span className="text-sm text-slate-600">Falta</span>
+          <span className="text-xs font-medium text-slate-600">falta</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 rounded-sm bg-blue-500" />
-          <span className="text-sm text-slate-600">Prevista</span>
+          <span className="text-xs font-medium text-slate-600">reposição prevista</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 rounded-sm bg-green-500" />
-          <span className="text-sm text-slate-600">Confirmada</span>
+          <span className="text-xs font-medium text-slate-600">reposição realizada</span>
         </div>
       </div>
 
       {/* Calendar Grid */}
-      <div className="overflow-x-auto">
-        <div className="min-w-max">
-          {/* Day of week headers */}
-          <div className="mb-2 grid grid-cols-7 gap-1">
-            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"].map((day) => (
-              <div key={day} className="w-20 text-center text-xs font-semibold uppercase text-slate-500 sm:w-24">
-                {day}
-              </div>
-            ))}
-          </div>
+      <div className="relative isolate">
+        {/* Day of week headers */}
+        <div className="mb-2 grid grid-cols-7 gap-1.5">
+          {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"].map((day) => (
+            <div key={day} className="text-center text-[11px] font-semibold uppercase tracking-[0.05em] text-slate-500">
+              {day}
+            </div>
+          ))}
+        </div>
 
-          {/* Calendar days */}
-          <div className="grid grid-cols-7 gap-1">
-            {daysArray.map((day, index) => {
-              const dayEvents = day ? getEventsForDay(day) : [];
-              const dayTone = day ? getDayTone(dayEvents) : "border-slate-100 bg-white text-slate-900";
-              const tooltip = dayEvents.length > 0 ? dayEvents.map(formatTooltipLine).join("\n") : "";
+        {/* Calendar days */}
+        <div className="relative z-0 grid grid-cols-7 gap-1 overflow-visible">
+          {daysArray.map((day, index) => {
+            const dayEvents = day ? getEventsForDay(day) : [];
+            const dayTone = day ? getDayTone(dayEvents) : "border-slate-100 bg-white text-slate-900";
 
-              return (
-                <button
-                  key={index}
-                  type="button"
-                  title={tooltip}
-                  className={`group relative flex w-20 flex-col justify-between rounded-lg border-2 p-2 text-left transition hover:-translate-y-[1px] hover:shadow-sm sm:w-24 ${
-                    day ? `min-h-20 ${dayTone}` : "border-slate-100 bg-white text-slate-900"
-                  }`}
-                >
-                  {day && (
-                    <>
-                      <div className="text-xs font-semibold">{day}</div>
-                      {dayEvents.length > 0 ? (
-                        <>
-                          <div className="mt-2 self-start rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-slate-700 shadow-sm">
-                            {dayEvents.length} evento{dayEvents.length > 1 ? "s" : ""}
-                          </div>
-                          <div className="pointer-events-none absolute left-1/2 bottom-full z-30 mb-2 w-56 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-medium text-slate-700 opacity-0 shadow-xl transition group-hover:opacity-100">
-                            <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Eventos</div>
-                            <div className="space-y-1">
-                              {dayEvents.slice(0, 3).map((event) => (
-                                <div key={`${event.id}-${event.kind}`} className="leading-tight">
-                                  {formatTooltipLine(event)}
-                                </div>
-                              ))}
-                              {dayEvents.length > 3 ? <div className="text-[10px] font-semibold text-slate-500 mt-1">+{dayEvents.length - 3} outros</div> : null}
-                            </div>
-                          </div>
-                        </>
-                      ) : null}
-                      <div className="pointer-events-none absolute inset-0 rounded-lg ring-0 ring-transparent transition group-hover:ring-2 group-hover:ring-slate-900/10" />
-                    </>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+            return (
+              <button
+                key={index}
+                type="button"
+                onClick={() => handleDayClick(day)}
+                className={`group relative z-0 flex min-h-[78px] w-full flex-col justify-between rounded-lg border-2 p-1.5 text-left transition hover:z-20 hover:-translate-y-[1px] hover:shadow-sm focus-visible:z-20 ${
+                  day ? `${dayTone}` : "border-slate-100 bg-white text-slate-900"
+                }`}
+                disabled={!day}
+              >
+                {day && (
+                  <>
+                    {dayEvents.length > 0 ? (
+                      <div className="pointer-events-none absolute left-1/2 top-0 z-30 hidden w-[220px] -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-xl border border-slate-200 bg-white/95 p-2 opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100 xl:block">
+                        <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Eventos do dia</div>
+                        <div className="space-y-1.5">
+                          {dayEvents.map((event, idx) => {
+                            const kind = event?.kind || "planned";
+                            const tone =
+                              kind === "absence"
+                                ? "bg-red-500"
+                                : kind === "confirmed"
+                                  ? "bg-green-500"
+                                  : "bg-blue-500";
+                            const safeLabel = event?.label || "Evento";
+                            const safeResident = event?.residentName || "Residente";
+
+                            return (
+                              <div key={`${event?.id || "event"}-${idx}`} className="flex items-center gap-2 text-[11px] text-slate-700">
+                                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${tone}`} />
+                                <span className="truncate font-medium">{safeLabel}: {safeResident}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="text-xs font-semibold">{day}</div>
+                    {dayEvents.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {dayEvents.slice(0, 6).map((event, idx) => {
+                          const kind = event?.kind || "planned";
+                          const tone =
+                            kind === "absence"
+                              ? "bg-red-500"
+                              : kind === "confirmed"
+                                ? "bg-green-500"
+                                : "bg-blue-500";
+
+                          return <span key={`${event?.id || "dot"}-${idx}`} className={`h-1.5 w-4 rounded-full ${tone}`} />;
+                        })}
+                      </div>
+                    ) : null}
+                    <div className="pointer-events-none absolute inset-0 rounded-lg ring-0 ring-transparent transition group-hover:ring-2 group-hover:ring-slate-900/10" />
+                  </>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Info text */}
-      <p className="mt-4 text-xs text-slate-500">Selecione um residente na lateral para ver detalhes dos eventos.</p>
+      <p className="mt-3 text-[11px] text-slate-500">Selecione um residente na lateral para ver detalhes dos eventos.</p>
+
+      {selectedDay ? (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-950/45 p-4 pt-6 sm:items-center" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg max-h-[calc(100dvh-3rem)] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Eventos do dia</div>
+                <h4 className="mt-2 text-base font-bold text-slate-900 capitalize">{selectedDay.dateLabel}</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedDay(null)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="max-h-[calc(100dvh-12rem)] space-y-2 overflow-y-auto px-5 py-4">
+              {selectedDay.items.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Sem eventos nesta data.</div>
+              ) : (
+                selectedDay.items.map((event, index) => {
+                  const safeLabel = event?.label || "Evento";
+                  const safeResident = event?.residentName || "Residente";
+                  const safeDetails = event?.details || "Sem detalhes";
+                  const kind = event?.kind || "planned";
+
+                  return (
+                    <div key={`${event?.id || "event"}-${index}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900">{safeLabel}: {safeResident}</div>
+                          <div className="mt-1 text-xs text-slate-600">{safeDetails}</div>
+                        </div>
+                        <div
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            kind === "absence"
+                              ? "bg-red-100 text-red-700"
+                              : kind === "confirmed"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-blue-100 text-blue-700"
+                          }`}
+                        >
+                          {kind === "absence" ? `-${event?.hours || 0}h` : `+${event?.hours || 0}h`}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -47,35 +47,47 @@ async function findUserByLoginIdentifier(identifier: string) {
   );
 }
 
+function buildRedirectResponse(location: string) {
+  return new NextResponse(null, {
+    status: 303,
+    headers: {
+      Location: location,
+    },
+  });
+}
+
+function buildLoginPath(error?: string) {
+  const params = new URLSearchParams();
+  if (error) {
+    params.set("error", error);
+  }
+
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const email = normalizeIdentifier(String(body?.email || body?.login || ""));
-    const password = String(body?.password || "");
+    const formData = await req.formData();
+    const email = normalizeIdentifier(String(formData.get("email") || ""));
+    const password = String(formData.get("password") || "");
 
     if (!email || !password) {
-      return NextResponse.json(
-        { error: "Email e senha são obrigatórios" },
-        { status: 400 }
-      );
+      return buildRedirectResponse(buildLoginPath("Email e senha são obrigatórios"));
     }
 
     const user = await findUserByLoginIdentifier(email);
 
     if (!user) {
-      return NextResponse.json(
-        { error: "Email ou senha inválidos" },
-        { status: 401 }
-      );
+      return buildRedirectResponse(buildLoginPath("Email ou senha inválidos"));
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
-      return NextResponse.json(
-        { error: "Email ou senha inválidos" },
-        { status: 401 }
-      );
+      return buildRedirectResponse(buildLoginPath("Email ou senha inválidos"));
     }
+
+    const response = buildRedirectResponse(user.role === "RESIDENT" ? "/resident/shifts" : "/");
 
     const token = signToken({
       userId: user.id,
@@ -83,22 +95,9 @@ export async function POST(req: NextRequest) {
       role: user.role,
     });
 
-    const response = NextResponse.json({
-      success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-    });
-
-    const forwardedProto = req.headers.get("x-forwarded-proto");
-    const isHttps = req.nextUrl.protocol === "https:" || forwardedProto === "https";
-
     response.cookies.set("auth_token", token, {
       httpOnly: true,
-      secure: isHttps,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
@@ -106,10 +105,7 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("Login error:", error);
-    return NextResponse.json(
-      { error: "Erro ao fazer login" },
-      { status: 500 }
-    );
+    console.error("Login web error:", error);
+    return buildRedirectResponse(buildLoginPath("Erro ao fazer login"));
   }
 }

@@ -1,0 +1,21 @@
+                                      Table "public.Absence"
+   Column    |              Type              | Collation | Nullable |          Default           
+-------------+--------------------------------+-----------+----------+----------------------------
+ id          | text                           |           | not null | 
+ residentId  | text                           |           | not null | 
+ date        | timestamp(3) without time zone |           | not null | 
+ hours       | integer                        |           | not null | 
+ type        | "AbsenceType"                  |           | not null | 
+ reason      | text                           |           |          | 
+ createdById | text                           |           | not null | 
+ createdAt   | timestamp(3) without time zone |           | not null | CURRENT_TIMESTAMP
+ location    | "AbsenceLocation"              |           | not null | 'OUTRO'::"AbsenceLocation"
+ observation | text                           |           |          | 
+ period      | "AbsencePeriod"                |           | not null | 'SD'::"AbsencePeriod"
+Indexes:
+    "Absence_pkey" PRIMARY KEY, btree (id)
+    "Absence_residentId_idx" btree ("residentId")
+Foreign-key constraints:
+    "Absence_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"(id) ON UPDATE CASCADE ON DELETE RESTRICT
+    "Absence_residentId_fkey" FOREIGN KEY ("residentId") REFERENCES "Resident"(id) ON UPDATE CASCADE ON DELETE CASCADE
+

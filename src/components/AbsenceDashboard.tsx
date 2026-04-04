@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight, LogOut, Pencil, Plus, Trash2, X } from "lucide-react";
 import PreceptorCalendar from "@/components/PreceptorCalendar";
 import type { CalendarEvent } from "@/types/calendar";
@@ -109,7 +109,9 @@ function formatDateLabel(dateString: string): string {
 }
 
 export default function AbsenceDashboard() {
+  const requestControllers = useRef(new Set<AbortController>());
   const [residents, setResidents] = useState<Resident[]>([]);
+  const [residentLoadError, setResidentLoadError] = useState<string | null>(null);
   const [canEditResidents, setCanEditResidents] = useState(false);
   const [canViewResidentCredentials, setCanViewResidentCredentials] = useState(false);
   const [selectedResidentId, setSelectedResidentId] = useState("");
@@ -150,6 +152,7 @@ export default function AbsenceDashboard() {
   const [editingResidentPassword, setEditingResidentPassword] = useState("");
   const [showMobileOutstandingSheet, setShowMobileOutstandingSheet] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [logoutReady, setLogoutReady] = useState(false);
 
   useEffect(() => {
     void fetchSession();
@@ -157,9 +160,45 @@ export default function AbsenceDashboard() {
     void fetchCalendarEvents();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      requestControllers.current.forEach((controller) => controller.abort());
+      requestControllers.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLoading(false);
+      setActionMessage("Não foi possível carregar os residentes no tempo esperado.");
+    }, 15000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading]);
+
+  async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 12000) {
+    const controller = new AbortController();
+    requestControllers.current.add(controller);
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } finally {
+      window.clearTimeout(timer);
+      requestControllers.current.delete(controller);
+    }
+  }
+
   async function fetchSession() {
     try {
-      const res = await fetch("/escala/api/me", {
+      const res = await fetchWithTimeout("/escala/api/me", {
         credentials: "include",
         cache: "no-store",
       });
@@ -189,16 +228,33 @@ export default function AbsenceDashboard() {
   }, [actionMessage]);
 
   async function fetchResidents(preferredResidentId?: string) {
+    setResidentLoadError(null);
+
     try {
-      const res = await fetch("/escala/api/residents", {
+      const res = await fetchWithTimeout("/escala/api/residents", {
         credentials: "include",
         cache: "no-store",
       });
+
       if (!res.ok) {
+        setResidents([]);
+        setSelectedResident(null);
+        setResidentLoadError("Não foi possível carregar os residentes.");
+        setActionMessage("Não foi possível carregar os residentes.");
         return;
       }
 
-      const data = (await res.json()) as Resident[];
+      const rawData = await res.json();
+      if (!Array.isArray(rawData)) {
+        setResidents([]);
+        setSelectedResident(null);
+        setResidentLoadError("A resposta dos residentes veio em formato inválido.");
+        setActionMessage("Não foi possível carregar os residentes.");
+        return;
+      }
+
+      const data = rawData as Resident[];
+      setResidentLoadError(null);
       setResidents(data);
 
       if (data.length > 0) {
@@ -227,6 +283,10 @@ export default function AbsenceDashboard() {
       }
     } catch (error) {
       console.error("Error fetching residents:", error);
+      setResidents([]);
+      setSelectedResident(null);
+      setResidentLoadError("Não foi possível carregar os residentes.");
+      setActionMessage("Não foi possível carregar os residentes. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -234,7 +294,7 @@ export default function AbsenceDashboard() {
 
   async function fetchCalendarEvents() {
     try {
-      const res = await fetch("/escala/api/calendar-events", {
+      const res = await fetchWithTimeout("/escala/api/calendar-events", {
         credentials: "include",
         cache: "no-store",
       });
@@ -265,22 +325,30 @@ export default function AbsenceDashboard() {
 
   async function fetchResidentSummary(residentId: string) {
     try {
-      const res = await fetch(`/escala/api/resident-summary?residentId=${residentId}`, {
+      const res = await fetchWithTimeout(`/escala/api/resident-summary?residentId=${residentId}`, {
         credentials: "include",
         cache: "no-store",
       });
 
       if (!res.ok) {
+        setSelectedResident(null);
         return;
       }
 
       const data = (await res.json()) as ResidentSummary;
+      if (!data || !data.resident) {
+        setSelectedResident(null);
+        return;
+      }
+
       setSelectedResident(data);
       setSelectedResidentId(residentId);
       setHistoryMonth("all");
       setHistoryKind("all");
     } catch (error) {
       console.error("Error fetching resident summary:", error);
+      setSelectedResident(null);
+      setActionMessage("Resumo do residente indisponível no momento.");
     }
   }
 
@@ -298,7 +366,7 @@ export default function AbsenceDashboard() {
     setSubmitting(true);
     try {
       const isEditing = editTarget?.kind === "absence";
-      const res = await fetch(isEditing ? `/escala/api/absences/${editTarget.id}` : "/escala/api/absences", {
+      const res = await fetchWithTimeout(isEditing ? `/escala/api/absences/${editTarget.id}` : "/escala/api/absences", {
         method: isEditing ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -337,7 +405,7 @@ export default function AbsenceDashboard() {
     setSubmitting(true);
     try {
       const isEditing = editTarget?.kind === "makeup";
-      const res = await fetch(isEditing ? `/escala/api/makeups/${editTarget.id}` : "/escala/api/makeups", {
+      const res = await fetchWithTimeout(isEditing ? `/escala/api/makeups/${editTarget.id}` : "/escala/api/makeups", {
         method: isEditing ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -373,7 +441,7 @@ export default function AbsenceDashboard() {
     setSubmitting(true);
     try {
       const isEditing = editTarget?.kind === "planned";
-      const res = await fetch(isEditing ? `/escala/api/planned-makeups/${editTarget.id}` : "/escala/api/planned-makeups", {
+      const res = await fetchWithTimeout(isEditing ? `/escala/api/planned-makeups/${editTarget.id}` : "/escala/api/planned-makeups", {
         method: isEditing ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -516,7 +584,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/escala/api/absences/${absenceId}`, {
+      const res = await fetchWithTimeout(`/escala/api/absences/${absenceId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -543,7 +611,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/escala/api/makeups/${makeupId}`, {
+      const res = await fetchWithTimeout(`/escala/api/makeups/${makeupId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -570,7 +638,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/escala/api/planned-makeups/${makeupId}`, {
+      const res = await fetchWithTimeout(`/escala/api/planned-makeups/${makeupId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -597,7 +665,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/escala/api/planned-makeups/${makeupId}`, {
+      const res = await fetchWithTimeout(`/escala/api/planned-makeups/${makeupId}`, {
         method: "PATCH",
         credentials: "include",
       });
@@ -625,7 +693,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/escala/api/residents", {
+      const res = await fetchWithTimeout("/escala/api/residents", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -663,7 +731,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/escala/api/residents/${residentId}`, {
+      const res = await fetchWithTimeout(`/escala/api/residents/${residentId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -697,7 +765,7 @@ export default function AbsenceDashboard() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/escala/api/residents/${editingResidentId}`, {
+      const res = await fetchWithTimeout(`/escala/api/residents/${editingResidentId}`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -727,8 +795,19 @@ export default function AbsenceDashboard() {
   }
 
   async function handleLogout() {
-    await fetch("/escala/api/logout", { method: "POST", credentials: "include" });
-    window.location.replace("/escala/login");
+    setLogoutReady(false);
+
+    try {
+      await fetchWithTimeout("/escala/api/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+      setActionMessage("Logout realizado. Clique em 'Ir para login'.");
+      setLogoutReady(true);
+    } catch (error) {
+      console.error("Error logging out:", error);
+      setActionMessage("Não foi possível encerrar a sessão. Tente novamente.");
+    }
   }
 
   const groupedResidents = residentGroups.map((group) => ({
@@ -825,7 +904,7 @@ export default function AbsenceDashboard() {
   }
 
   return (
-    <div className="ambient-shell min-h-screen text-slate-900">
+    <div className="ambient-shell min-h-screen overflow-x-hidden text-slate-900">
       <header className="hero-band sticky top-0 z-30 border-b border-white/10 text-white backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6 sm:py-5 lg:px-8">
           <div>
@@ -833,20 +912,64 @@ export default function AbsenceDashboard() {
             <h1 className="mt-2 text-base font-black uppercase tracking-[0.16em] sm:mt-3 sm:text-[1.35rem] sm:tracking-[0.24em]">Controle de Faltas e Reposições</h1>
             <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.14em] text-slate-300 sm:text-xs sm:tracking-[0.16em]">Painel do preceptor</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/20 sm:px-4 sm:py-2.5"
-          >
-            <LogOut className="h-4 w-4" />
-            <span className="hidden sm:inline">Sair</span>
-          </button>
+          {logoutReady ? (
+            <a
+              href="/escala/login"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/20 sm:px-4 sm:py-2.5"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Ir para login</span>
+            </a>
+          ) : (
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/20 sm:px-4 sm:py-2.5"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sair</span>
+            </button>
+          )}
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
         {actionMessage ? (
           <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm font-medium text-emerald-800 shadow-sm">
             {actionMessage}
+          </div>
+        ) : null}
+
+        {!loading && residentLoadError ? (
+          <div className="glass-surface mb-6 rounded-[28px] p-6 text-center">
+            <h2 className="text-base font-semibold text-slate-900">Falha ao carregar residentes</h2>
+            <p className="mt-2 text-sm text-slate-600">{residentLoadError}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setResidentLoadError(null);
+                void fetchResidents();
+              }}
+              className="mt-4 inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        ) : !loading && residents.length === 0 ? (
+          <div className="glass-surface mb-6 rounded-[28px] p-6 text-center">
+            <h2 className="text-base font-semibold text-slate-900">Nenhum residente disponível</h2>
+            <p className="mt-2 text-sm text-slate-600">Confira sua conexão e tente carregar novamente.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setResidentLoadError(null);
+                void fetchResidents();
+              }}
+              className="mt-4 inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Tentar novamente
+            </button>
           </div>
         ) : null}
 
@@ -1132,9 +1255,9 @@ export default function AbsenceDashboard() {
         </section>
 
         {canEditResidents ? (
-          <div className="hidden lg:grid lg:grid-cols-[240px_1fr] lg:gap-0 lg:min-h-[calc(100vh-8rem)]">
-            <aside className="glass-surface sticky top-24 h-[calc(100vh-7rem)] rounded-r-2xl rounded-l-none shadow-lg overflow-y-auto">
-              <div className="flex flex-col border-r border-slate-200">
+          <div className="hidden lg:grid lg:min-h-[calc(100vh-8rem)] lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-7">
+            <aside className="glass-surface sticky top-24 h-[calc(100vh-7rem)] overflow-y-auto rounded-[28px]">
+              <div className="flex flex-col">
                 <div className="border-b border-slate-200 px-5 py-5">
                   <div className="text-[9px] font-bold uppercase tracking-[0.24em] text-slate-400">Painel</div>
                   <div className="mt-1.5 text-base font-bold text-slate-900">Controle</div>
@@ -1176,9 +1299,9 @@ export default function AbsenceDashboard() {
               </div>
             </aside>
 
-            <div className="min-w-0 space-y-6 px-2 py-6 lg:px-4">
+            <div className="min-w-0 space-y-7 py-6">
               {desktopTab === "dashboard" ? (
-                <section className="grid gap-4 lg:grid-cols-[minmax(350px,1fr)_minmax(380px,1.3fr)] lg:items-start">
+                <section className="grid gap-7 lg:grid-cols-[minmax(330px,0.95fr)_minmax(460px,1.25fr)] lg:items-start">
                   <div className="min-w-0">
                     <OutstandingBalancePanel
                       residents={residentsWithOutstandingBalanceSorted}
@@ -1188,14 +1311,14 @@ export default function AbsenceDashboard() {
                       dense
                     />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 xl:max-w-none">
                     <PreceptorCalendar events={calendarEvents} />
                   </div>
                 </section>
               ) : null}
 
               {desktopTab === "residents" ? (
-                <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                <div className="grid gap-7 lg:grid-cols-[290px_minmax(0,1fr)]">
                   <aside className="glass-surface h-fit rounded-[30px] lg:sticky lg:top-24">
                     <div className="border-b border-slate-200 px-5 py-4">
                       <h2 className="text-base font-semibold text-slate-900">Residentes</h2>
@@ -1237,12 +1360,12 @@ export default function AbsenceDashboard() {
                     </div>
                   </aside>
 
-                  <section className="space-y-4">
+                  <section className="space-y-5">
                     <div className="glass-surface rounded-3xl p-5">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h2 className="text-xl font-bold text-slate-900">{selectedResident?.resident.name || "Selecione um residente"}</h2>
-                          <p className="mt-1 text-xs text-slate-500">
+                          <h2 className="text-xl leading-tight font-bold text-slate-900">{selectedResident?.resident.name || "Selecione um residente"}</h2>
+                          <p className="mt-1.5 text-xs leading-5 text-slate-500">
                             {selectedResident ? `R${selectedResident.resident.pgyLevel}` : "Selecione um residente"}
                           </p>
                         </div>
@@ -1266,7 +1389,7 @@ export default function AbsenceDashboard() {
                           <MetricCard label="Saldo pendente" value={`${selectedResident.balanceHours}h`} tone="amber" />
                         </div>
 
-                        <div className="grid gap-6 xl:grid-cols-2">
+                        <div className="grid gap-7 xl:grid-cols-2">
                           <HistoryCard title="Faltas lançadas" tone="red">
                             {filteredAbsences.length === 0 ? (
                               <EmptyState text="Nenhuma falta registrada." />
@@ -1310,7 +1433,7 @@ export default function AbsenceDashboard() {
                           </HistoryCard>
                         </div>
 
-                        <div className="grid gap-6 xl:grid-cols-2">
+                        <div className="grid gap-7 xl:grid-cols-2">
                           <HistoryCard title="Reposições previstas" tone="amber">
                             {filteredPlannedMakeups.length === 0 ? (
                               <EmptyState text="Nenhuma reposição prevista." />

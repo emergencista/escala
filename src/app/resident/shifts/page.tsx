@@ -3,19 +3,28 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, AlertCircle, Loader } from "lucide-react";
+import { formatDateFromIso } from "@/lib/date";
+import { apiFetch } from "@/lib/fetch-helper";
 
-interface Shift {
+interface Absence {
   id: string;
   date: string;
-  type: "DIURNO" | "NOTURNO";
-  status: "ESCALADO" | "PRESENTE" | "FALTA" | "FALTA_JUSTIFICADA";
+  hours: number;
+  type: string;
+  reason?: string | null;
+  observation?: string | null;
+  location?: string | null;
+  period?: string | null;
 }
 
 interface ResidentData {
   name: string;
   pgyLevel: number;
-  shifts: Shift[];
+  absences: Absence[];
+  makeups: unknown[];
   totalAbsenceHours: number;
+  totalMakeupHours: number;
+  balanceHours: number;
 }
 
 export default function ResidentShiftsPage() {
@@ -27,9 +36,9 @@ export default function ResidentShiftsPage() {
   useEffect(() => {
     const fetchResidentData = async () => {
       try {
-        const response = await fetch("/escala/api/resident/shifts");
+        const response = await apiFetch("/api/resident/shifts");
         if (response.status === 401) {
-          router.push("/escala/login");
+          router.push("/");
           return;
         }
         if (!response.ok) {
@@ -49,8 +58,8 @@ export default function ResidentShiftsPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/escala/api/logout", { method: "POST" });
-      router.push("/escala/login");
+      await apiFetch("/api/logout", { method: "POST" });
+      router.push("/");
     } catch (err) {
       console.error("Erro ao fazer logout:", err);
     }
@@ -79,7 +88,7 @@ export default function ResidentShiftsPage() {
                 {error || "Não foi possível carregar seus dados"}
               </p>
               <button
-                onClick={() => router.push("/escala/login")}
+                onClick={() => router.push("/")}
                 className="mt-4 text-sm font-medium text-red-700 hover:text-red-900 underline"
               >
                 Voltar para login
@@ -91,9 +100,13 @@ export default function ResidentShiftsPage() {
     );
   }
 
-  const absencesCount = resident.shifts.filter(
-    (s) => s.status === "FALTA" || s.status === "FALTA_JUSTIFICADA"
-  ).length;
+  const absencesCount = resident.absences.length;
+
+  const absenceTypeLabel: Record<string, string> = {
+    ATESTADO: "Atestado",
+    SEM_JUSTIFICATIVA: "Sem justificativa",
+    OUTRA: "Outra",
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -163,13 +176,13 @@ export default function ResidentShiftsPage() {
           </div>
         </div>
 
-        {/* Shifts Table */}
+        {/* Absences Table */}
         <div className="rounded-lg bg-white shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <h2 className="text-lg font-semibold text-gray-900">Histórico de Faltas</h2>
           </div>
 
-          {resident.shifts.length === 0 ? (
+          {resident.absences.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <p className="text-gray-500">Nenhum registro de falta</p>
             </div>
@@ -182,51 +195,40 @@ export default function ResidentShiftsPage() {
                       Data
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
+                      Horas
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
                       Tipo
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">
-                      Status
+                      Detalhes
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {resident.shifts.map((shift, index) => {
-                    const date = new Date(shift.date);
-                    const statusColors: Record<string, string> = {
-                      ESCALADO: "bg-blue-100 text-blue-800",
-                      PRESENTE: "bg-green-100 text-green-800",
-                      FALTA: "bg-red-100 text-red-800",
-                      FALTA_JUSTIFICADA: "bg-amber-100 text-amber-800",
-                    };
-
-                    const statusLabel: Record<string, string> = {
-                      ESCALADO: "Escalado",
-                      PRESENTE: "Presente",
-                      FALTA: "Falta",
-                      FALTA_JUSTIFICADA: "Falta Justificada",
-                    };
+                  {resident.absences.map((absence, index) => {
+                    const details = [absence.location, absence.period, absence.reason, absence.observation]
+                      .filter(Boolean)
+                      .join(" • ");
 
                     return (
                       <tr
-                        key={shift.id}
+                        key={absence.id}
                         className={`border-b border-gray-200 hover:bg-gray-50 ${
                           index % 2 === 0 ? "bg-white" : "bg-gray-50"
                         }`}
                       >
                         <td className="px-6 py-4 text-sm text-gray-900">
-                          {date.toLocaleDateString("pt-BR")}
+                          {formatDateFromIso(absence.date)}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {absence.hours}h
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">
-                          {shift.type === "DIURNO" ? "Diurno" : "Noturno"}
+                          {absenceTypeLabel[absence.type] || absence.type}
                         </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                              statusColors[shift.status] || "bg-gray-100 text-gray-800"
-                            }`}
-                          >
-                            {statusLabel[shift.status] || shift.status}
-                          </span>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {details || "-"}
                         </td>
                       </tr>
                     );
